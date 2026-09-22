@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "alethia-starter-ai values",
+  "description": "The chart's interface. A change here is a MAJOR bump of the chart version: a clone that set a key this schema stopped accepting no longer renders at all.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["serviceAccount", "qdrant", "embeddings", "llm", "webui"],
+  "properties": {
+    "nameOverride": { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "create stays false: Alethia's bring-your-own-chart project blacklists ServiceAccount, Role and RoleBinding.",
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" }
+      }
+    },
+    "qdrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "httpPort": { "$ref": "#/definitions/port" },
+            "grpcPort": { "$ref": "#/definitions/port" }
+          }
+        },
+        "persistence": { "$ref": "#/definitions/persistence" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "embeddings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "modelId": { "type": "string", "minLength": 1 },
+        "port": { "$ref": "#/definitions/port" },
+        "cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "sizeLimit": { "type": "string" } }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "llm": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "hfRepo": {
+          "type": "string",
+          "minLength": 1,
+          "description": "<user>/<repo>[:quant], as llama.cpp's -hf takes it."
+        },
+        "port": { "$ref": "#/definitions/port" },
+        "contextSize": { "type": "integer", "minimum": 256 },
+        "threads": { "type": "integer", "minimum": 1 },
+        "cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "sizeLimit": { "type": "string" } }
+        },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "webui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "port": { "$ref": "#/definitions/port" },
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "enum": ["ClusterIP", "NodePort", "LoadBalancer"] },
+            "port": { "$ref": "#/definitions/port" }
+          }
+        },
+        "auth": { "type": "boolean" },
+        "persistence": { "$ref": "#/definitions/persistence" },
+        "resources": { "$ref": "#/definitions/resources" }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "className": { "type": "string" },
+        "annotations": { "type": "object" },
+        "host": { "type": "string" },
+        "tls": { "type": "array" }
+      }
+    },
+    "podAnnotations": { "type": "object" },
+    "nodeSelector": { "type": "object" },
+    "tolerations": { "type": "array" },
+    "affinity": { "type": "object" }
+  },
+  "definitions": {
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "size": { "type": "string" },
+        "storageClassName": { "type": "string" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": { "type": "object" },
+        "limits": { "type": "object" }
+      }
+    }
+  }
+}

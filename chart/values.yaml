@@ -1,0 +1,139 @@
+# THE DEFAULTS ARE CPU-ONLY AND THEY ARE MEANT TO STAY THAT WAY.
+#
+# Nothing in this chart asks for `nvidia.com/gpu`, and the total of the requests below is roughly
+# 2.3 vCPU and 5 GiB across four pods — an ordinary node pool. A GPU node pool is the most
+# expensive thing a curious reader could provision by accident, so it is not something a value in
+# this file can turn on. See ../gpu/README.md.
+#
+# Every value here is validated by values.schema.json. A change to that schema is a MAJOR bump.
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # FALSE, AND IT IS NOT A STYLE CHOICE. Alethia's bring-your-own-chart ArgoCD project blacklists
+  # `ServiceAccount`, `Role` and `RoleBinding` even though all three are namespaced: a chart that
+  # could mint its own identity could grant itself more than the project allows. Nothing in this
+  # chart calls the Kubernetes API, so nothing here needs one.
+  create: false
+  name: ""
+
+# ── The vector database ──────────────────────────────────────────────────────────────────────
+qdrant:
+  enabled: true
+  image:
+    repository: qdrant/qdrant
+    tag: "v1.19.1"
+    pullPolicy: IfNotPresent
+  service:
+    httpPort: 6333
+    grpcPort: 6334
+  persistence:
+    # On by default. Qdrant is the one component here whose data you would mind losing — the two
+    # model caches re-download, and the RAG app's own database is separately persisted below.
+    enabled: true
+    size: 5Gi
+    # Empty means the cluster's default StorageClass. A cluster without one leaves the PVC
+    # Pending, which is worth knowing before you go looking at Qdrant's logs.
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# ── Embeddings: Text Embeddings Inference, CPU build ─────────────────────────────────────────
+embeddings:
+  enabled: true
+  image:
+    repository: ghcr.io/huggingface/text-embeddings-inference
+    # The `cpu-` tags are the CPU build. A CUDA tag here would schedule onto a GPU node, which is
+    # the accident this template is shaped to avoid.
+    tag: "cpu-1.8"
+    pullPolicy: IfNotPresent
+  # ~130 MB, 384 dimensions, downloaded at startup. Small enough that the pod is ready in well
+  # under a minute on a cold cache, and good enough that retrieval is genuinely useful.
+  modelId: BAAI/bge-small-en-v1.5
+  port: 8080
+  cache:
+    # An emptyDir, not a volume claim: the model re-downloads in seconds and a PVC per model cache
+    # is storage you pay for to save that.
+    sizeLimit: 2Gi
+  resources:
+    requests:
+      cpu: 300m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# ── Generation: llama.cpp's server, CPU, small instruct model ────────────────────────────────
+llm:
+  enabled: true
+  image:
+    repository: ghcr.io/ggml-org/llama.cpp
+    # A pinned `server-b<build>` tag, not the moving `:server`. A template whose behaviour changes
+    # when upstream pushes is not a template.
+    tag: "server-b5350"
+    pullPolicy: IfNotPresent
+  # `-hf <user>/<repo>[:quant]`, defaulting to Q4_K_M. gemma-3-1b-it is ~800 MB quantised and
+  # answers usefully on a CPU. Raising this is the easiest way to make the stack slow: a 7B model
+  # on CPU is measured in seconds per token.
+  hfRepo: ggml-org/gemma-3-1b-it-GGUF
+  port: 8080
+  contextSize: 4096
+  threads: 4
+  cache:
+    sizeLimit: 8Gi
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "4"
+      memory: 6Gi
+
+# ── The RAG application ──────────────────────────────────────────────────────────────────────
+webui:
+  enabled: true
+  image:
+    repository: ghcr.io/open-webui/open-webui
+    tag: "v0.6.34"
+    pullPolicy: IfNotPresent
+  port: 8080
+  service:
+    # ClusterIP, deliberately. `LoadBalancer` provisions a cloud load balancer — and bills for it —
+    # the moment someone installs this to see what it does. Port-forward, or put an Ingress in
+    # front of it.
+    type: ClusterIP
+    port: 80
+  # Leave authentication ON. This is a chat application with your documents in it, and the first
+  # account created becomes the administrator.
+  auth: true
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
+
+ingress:
+  # Off by default: it needs an ingress controller in the cluster and a hostname you own, and a
+  # chart can create neither. It fronts the RAG app only — nothing else here should be public.
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  tls: []
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

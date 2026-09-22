@@ -1,0 +1,232 @@
+name: Validate
+
+# Free, and it runs on every push. Two of the checks below exist because the failures they catch
+# are invisible until a cluster is involved: a chart that breaks the bring-your-own contract fails
+# its ArgoCD SYNC minutes after a deploy that reported success, and a manifest that asks for a GPU
+# fails by provisioning one.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chart:
+    name: The untrusted half — chart/
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: helm lint
+        run: helm lint chart --strict
+
+      - name: helm template — defaults
+        run: helm template ai chart > /dev/null
+
+      - name: helm template — every documented option on
+        run: |
+          set -euo pipefail
+          helm template ai chart \
+            --set ingress.enabled=true \
+            --set ingress.host=ai.example.com \
+            --set ingress.className=nginx \
+            --set qdrant.persistence.enabled=false \
+            --set webui.persistence.enabled=false > /dev/null
+
+      - name: values.schema.json refuses an unknown key
+        run: |
+          set -euo pipefail
+          # A schema that silently accepts everything looks identical to one that works, so this
+          # asserts the REFUSAL rather than the acceptance.
+          if helm template ai chart --set thisKeyDoesNotExist=1 >/dev/null 2>&1; then
+            echo "::error::values.schema.json accepted an unknown key"
+            exit 1
+          fi
+          echo "unknown key refused, as intended"
+
+      - name: The BYO contract — defaults
+        run: hack/check-byo-contract.sh chart
+
+      - name: The BYO contract — with the Ingress on
+        run: hack/check-byo-contract.sh chart --set ingress.enabled=true --set ingress.host=ai.example.com
+
+      - name: The BYO contract check must FAIL on a chart that breaks the contract
+        run: |
+          set -euo pipefail
+          # The mutation control. A check that had quietly stopped looking would report a pass on
+          # every run and read exactly like a working one.
+          if hack/check-byo-contract.sh chart --set serviceAccount.create=true >/dev/null 2>&1; then
+            echo "::error::the contract check passed a render containing a ServiceAccount"
+            exit 1
+          fi
+          echo "contract check refused the ServiceAccount, as intended"
+
+      - name: The chart never asks for a GPU
+        run: |
+          set -euo pipefail
+          # Tested against the RENDER, not the source. A grep over the source files would match the
+          # sentences in the comments that promise this and fail on its own documentation — and a
+          # check whose cheapest fix is to delete the explanation is worse than no check.
+          if helm template ai chart | grep -n 'nvidia\.com/gpu'; then
+            echo "::error::the rendered chart requests an NVIDIA GPU"
+            exit 1
+          fi
+          echo "no GPU request in the rendered chart"
+
+  apps:
+    name: The trusted half — root, addons/, gpu/, batch/
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # A pinned interpreter and an explicit install, rather than trusting whatever the runner
+      # image happens to ship. The checks below PARSE these manifests rather than grepping them,
+      # and a missing parser would turn every one of them into a silent skip.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ensure PyYAML
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pyyaml
+          python3 -c "import yaml; print('pyyaml', yaml.__version__)"
+
+      - name: Ensure kubectl
+        run: |
+          set -euo pipefail
+          if command -v kubectl >/dev/null 2>&1; then kubectl version --client; exit 0; fi
+          mkdir -p "$HOME/.local/bin"
+          v="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+          curl -fsSL -o "$HOME/.local/bin/kubectl" "https://dl.k8s.io/release/$v/bin/linux/amd64/kubectl"
+          chmod +x "$HOME/.local/bin/kubectl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: kustomize build the root
+        run: |
+          set -euo pipefail
+          n="$(kubectl kustomize . | grep -c '^kind:' || true)"
+          echo "root renders $n resources"
+          # A root that renders nothing produces an ArgoCD Application that is Healthy and Synced
+          # while managing zero resources.
+          [ "$n" -ge 1 ] || { echo "::error::the repository root renders no resources"; exit 1; }
+
+      - name: Every manifest outside the chart parses
+        run: |
+          set -euo pipefail
+          # DISCOVERED, never listed. A file added and silently skipped is the failure this job
+          # exists to prevent.
+          files="$(find addons gpu batch -name '*.yaml' | sort)"
+          [ -n "$files" ] || { echo "::error::found no manifests — this step would pass by checking nothing"; exit 1; }
+          for f in $files; do
+            echo "── $f ──"
+            python3 -c "import sys,yaml;[d for d in yaml.safe_load_all(open(sys.argv[1]))]" "$f"
+          done
+
+      - name: Every addons/ Application names the addons project
+        run: |
+          set -euo pipefail
+          # The `apps` project pins sourceRepos to YOUR repository, so an Application under it
+          # cannot pull a chart from ghcr.io. The `addons` project is the one that accepts another
+          # source. Getting this wrong fails at sync time with a permission error naming neither
+          # cause.
+          fail=0
+          for f in addons/*.yaml gpu/*.yaml; do
+            [ -e "$f" ] || continue
+            kind="$(python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['kind'])" "$f")"
+            [ "$kind" = "Application" ] || continue
+            proj="$(python3 -c "import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))['spec']['project'])" "$f")"
+            [ "$proj" = "addons" ] || { echo "::error::$f names project '$proj', not 'addons'"; fail=1; }
+          done
+          exit "$fail"
+
+      - name: No manifest outside gpu/ asks for a GPU
+        run: |
+          set -euo pipefail
+          # The template's central promise is that the default path is CPU-only. This keeps it
+          # true after the tenth edit.
+          #
+          # Parsed and re-emitted, not grepped: a text search over these files matches the
+          # sentences in their comments that promise exactly this, and a check whose cheapest fix
+          # is to delete its own explanation is worse than no check.
+          python3 - <<'PY'
+          import glob, sys, yaml
+          files = sorted(set(glob.glob('addons/*.yaml') + glob.glob('batch/*.yaml') + glob.glob('*.yaml')))
+          if not files:
+              sys.exit("::error::found no manifests — this check would pass by examining nothing")
+          bad = []
+          for f in files:
+              docs = [d for d in yaml.safe_load_all(open(f)) if d]
+              if 'nvidia.com/gpu' in yaml.safe_dump_all(docs):
+                  bad.append(f)
+          for f in bad:
+              print(f"::error::{f} requests an NVIDIA GPU and is outside gpu/")
+          print(f"checked {len(files)} files")
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: The addons directory must exist
+        run: |
+          set -euo pipefail
+          # Alethia renders the `addons` Application whether or not the directory is there, and an
+          # absent directory leaves a red ComparisonError after a deploy that reported success.
+          [ -d addons ] || { echo "::error::addons/ is missing"; exit 1; }
+
+  version:
+    name: Versions agree, and move when the template does
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: The three copies of the version agree
+        run: |
+          set -euo pipefail
+          # Three files holding the same number is three chances to be wrong. This is the one that
+          # notices.
+          file_v="$(tr -d '[:space:]' < TEMPLATE_VERSION)"
+          chart_v="$(grep -E '^version:' chart/Chart.yaml | awk '{print $2}')"
+          cm_v="$(grep -E '^  version:' template-info.yaml | awk '{print $2}' | tr -d '"')"
+          echo "TEMPLATE_VERSION=$file_v Chart.yaml=$chart_v template-info.yaml=$cm_v"
+          [ "$file_v" = "$chart_v" ] && [ "$file_v" = "$cm_v" ] || {
+            echo "::error::the three version declarations disagree"
+            exit 1
+          }
+
+      - name: TEMPLATE_VERSION moves when the template does
+        # Only in the template's own home. A clone is someone else's repository with its own
+        # release discipline.
+        if: github.repository_owner == 'alethialabs-io'
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          set -euo pipefail
+          base="${BASE:-$(git rev-parse HEAD^ 2>/dev/null || true)}"
+          if [ -z "$base" ]; then
+            echo "no base commit to compare against — nothing to check"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          delivered="$(echo "$changed" | grep -E '^(chart/|addons/|gpu/|batch/|[^/]+\.yaml$)' || true)"
+          if [ -z "$delivered" ]; then
+            echo "nothing delivered changed"
+            exit 0
+          fi
+          echo "changed:"; echo "$delivered"
+          if echo "$changed" | grep -qx 'TEMPLATE_VERSION'; then
+            echo "TEMPLATE_VERSION moved"
+            exit 0
+          fi
+          echo "::error::a delivered file changed and TEMPLATE_VERSION did not — see CHANGELOG.md"
+          exit 1

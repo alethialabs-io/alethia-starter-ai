@@ -1,0 +1,120 @@
+{{- if .Values.llm.enabled }}
+{{- $name := include "ai.component" (dict "root" . "component" "llm") }}
+{{/*
+llama.cpp's server — CPU inference, and the reason this template can be run by someone who is only
+curious.
+
+It serves an OpenAI-compatible API at /v1, so the RAG app talks to it with the same settings it
+would use against a hosted provider. Swapping in a hosted model later is a values change and not a
+rewrite.
+
+NO GPU. Nothing here requests `nvidia.com/gpu` and the image is the CPU build. A GPU-backed model
+belongs on the KServe side of the split — see ../addons and ../gpu.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llm
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.llm.port }}
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: llm
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: llm
+  template:
+    metadata:
+      labels:
+        {{- include "ai.labels" . | nindent 8 }}
+        app.kubernetes.io/component: llm
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with (include "ai.serviceAccountName" .) }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      automountServiceAccountToken: false
+      containers:
+        - name: llm
+          image: "{{ .Values.llm.image.repository }}:{{ .Values.llm.image.tag }}"
+          imagePullPolicy: {{ .Values.llm.image.pullPolicy }}
+          args:
+            - --host
+            - "0.0.0.0"
+            - --port
+            - {{ .Values.llm.port | quote }}
+            # -hf <user>/<repo>[:quant] — the quantisation defaults to Q4_K_M.
+            - -hf
+            - {{ .Values.llm.hfRepo | quote }}
+            - -c
+            - {{ .Values.llm.contextSize | quote }}
+            - -t
+            - {{ .Values.llm.threads | quote }}
+          env:
+            # Where -hf puts what it downloads. Without it the model lands in the container
+            # filesystem and is fetched again on every restart.
+            - name: LLAMA_CACHE
+              value: /models
+          ports:
+            - name: http
+              containerPort: {{ .Values.llm.port }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            # The model is ~800 MB and is downloaded on first start. 120 × 5s = ten minutes before
+            # anything concludes the container is broken; a liveness probe without this in front
+            # of it kills the pod mid-download, forever.
+            failureThreshold: 120
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            # Generation occupies the server. A short timeout here reports a busy model as a dead
+            # one and restarts it under load, which is exactly when you need it.
+            timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.llm.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: models
+              mountPath: /models
+      volumes:
+        - name: models
+          emptyDir:
+            sizeLimit: {{ .Values.llm.cache.sizeLimit }}
+      {{- include "ai.scheduling" . | nindent 6 }}
+{{- end }}

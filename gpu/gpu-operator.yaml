@@ -1,0 +1,55 @@
+# THE NVIDIA GPU OPERATOR. THIS FILE DOES NOTHING WHERE IT SITS.
+#
+# It is in `gpu/` and not in `addons/`, and the root Application does not recurse, so nothing syncs
+# it. Copy it into `addons/` when you have decided to pay for GPU nodes:
+#
+#   cp gpu/gpu-operator.yaml addons/
+#
+# WHAT IT COSTS. The operator itself is cheap. What it is FOR is not: it exists to make GPU nodes
+# usable, and a GPU node pool is, by a wide margin, the most expensive thing a curious reader of
+# this repository could provision by accident. Depending on cloud and shape, one GPU node is a
+# four-figure monthly bill. The default path through this template never asks for one — inference
+# is CPU-only with a small model, and it stays that way until you copy this file.
+#
+# WHAT IT NEEDS. At least one node with an NVIDIA GPU attached, in a node pool you created
+# deliberately. The operator installs drivers, the container toolkit and the device plugin onto
+# those nodes; on a cluster with no GPU nodes it simply finds nothing to do, which is the failure
+# mode you want if you copy this by mistake.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gpu-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: addons
+  source:
+    repoURL: https://helm.ngc.nvidia.com/nvidia
+    chart: gpu-operator
+    targetRevision: "v26.7.0"
+    helm:
+      values: |
+        # Node Feature Discovery labels every node with the hardware it actually has, and the
+        # operator's daemonsets are placed by those labels — so a cluster whose nodes have no
+        # NVIDIA device is left alone rather than needing a hand-maintained node selector.
+        nfd:
+          enabled: true
+        daemonsets:
+          tolerations:
+            - key: nvidia.com/gpu
+              operator: Exists
+              effect: NoSchedule
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gpu-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  revisionHistoryLimit: 3

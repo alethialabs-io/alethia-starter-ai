@@ -1,0 +1,15 @@
+# THE ROOT MANIFEST. Do not delete this file without replacing it with another one.
+#
+# The root of THIS template is deliberately thin — the platform arrives through `addons/` and the
+# workloads through `chart/` — but it may not be empty, for two reasons the product enforces:
+#
+#   1. Alethia's root `apps` Application syncs this repository at `path: .`. A root with nothing
+#      in it produces an Application that is Synced and Healthy while managing zero resources.
+#   2. Alethia scaffolds generated service manifests into the root and commits them, but only
+#      while the root holds no `.yaml` or `.yml` file. One file opts the repository out for good.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - template-info.yaml

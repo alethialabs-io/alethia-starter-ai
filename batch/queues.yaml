@@ -1,0 +1,48 @@
+# Kueue queues. NOT DELIVERED FROM HERE — see batch/README.md.
+#
+# These are custom resources of the CRDs `addons/kueue.yaml` installs. Applying them in the same
+# sync as the chart means dry-running against a type the API server has not heard of yet, so they
+# wait until Kueue has synced once and then you copy this file into `addons/`.
+#
+# The shape below is the smallest complete Kueue setup: one flavour of resource, one cluster-wide
+# quota, one namespace-local queue that Jobs reference by name.
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: default-flavor
+# No node labels: this flavour is "any node in the cluster". A GPU setup would add a second
+# flavour selecting the GPU pool, and a second quota below.
+spec: {}
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: starter-cluster-queue
+spec:
+  namespaceSelector: {}
+  # StrictFIFO would head-of-line block on a job too large to ever fit. BestEffortFIFO lets the
+  # queue keep moving past one.
+  queueingStrategy: BestEffortFIFO
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: default-flavor
+          resources:
+            # Deliberately small. This is the ceiling admitted work may occupy at once, and a
+            # ceiling larger than the cluster is the same as no ceiling — which is the state
+            # Kueue exists to replace.
+            - name: cpu
+              nominalQuota: 4
+            - name: memory
+              nominalQuota: 8Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: starter-queue
+  # The namespace your Jobs run in. Change it to match, or Kueue will not find the queue a Job
+  # names and the Job is never admitted.
+  namespace: default
+spec:
+  clusterQueue: starter-cluster-queue

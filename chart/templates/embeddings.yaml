@@ -1,0 +1,106 @@
+{{- if .Values.embeddings.enabled }}
+{{- $name := include "ai.component" (dict "root" . "component" "embeddings") }}
+{{/*
+Text Embeddings Inference, CPU build — the "retrieval" half of retrieval-augmented generation.
+
+The model is downloaded at startup, so the pod needs egress to huggingface.co and takes a minute
+to go Ready on a cold cache. `startupProbe` is what keeps the liveness probe from killing it
+halfway through that download, which is the single most confusing way this component fails.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: embeddings
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.embeddings.port }}
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: embeddings
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: embeddings
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: embeddings
+  template:
+    metadata:
+      labels:
+        {{- include "ai.labels" . | nindent 8 }}
+        app.kubernetes.io/component: embeddings
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with (include "ai.serviceAccountName" .) }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      automountServiceAccountToken: false
+      containers:
+        - name: embeddings
+          image: "{{ .Values.embeddings.image.repository }}:{{ .Values.embeddings.image.tag }}"
+          imagePullPolicy: {{ .Values.embeddings.image.pullPolicy }}
+          args:
+            - --model-id
+            - {{ .Values.embeddings.modelId | quote }}
+            - --hostname
+            - "0.0.0.0"
+            - --port
+            - {{ .Values.embeddings.port | quote }}
+            # The image's default cache is inside the container filesystem. Pointing it at the
+            # mounted volume is what makes the emptyDir's sizeLimit the thing that bounds the
+            # download rather than the node's ephemeral storage.
+            - --huggingface-hub-cache
+            - /data
+          ports:
+            - name: http
+              containerPort: {{ .Values.embeddings.port }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            # 60 × 5s = five minutes to download and load the model before anything gives up.
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.embeddings.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: cache
+              mountPath: /data
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: {{ .Values.embeddings.cache.sizeLimit }}
+      {{- include "ai.scheduling" . | nindent 6 }}
+{{- end }}

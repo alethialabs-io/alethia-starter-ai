@@ -1,0 +1,43 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.webui.enabled }}
+{{- fail "ingress.enabled is true but webui.enabled is false — there is nothing to route to" }}
+{{- end }}
+{{- if not .Values.ingress.host }}
+{{- fail "ingress.enabled is true but ingress.host is empty — an Ingress with no host matches every request that reaches the controller" }}
+{{- end }}
+{{/*
+Fronts the RAG app and NOTHING ELSE. Qdrant, the embedding server and llama.cpp have no
+authentication of their own: an Ingress in front of any of them is an open model endpoint and an
+open vector store on the public internet.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ai.component" (dict "root" . "component" "webui") }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webui
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ai.component" (dict "root" . "component" "webui") }}
+                port:
+                  number: {{ .Values.webui.service.port }}
+{{- end }}

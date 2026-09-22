@@ -1,0 +1,22 @@
+apiVersion: v2
+name: alethia-starter-ai
+description: >-
+  The bring-your-own-chart half of Alethia's AI starter template: a vector database, a CPU
+  embedding server, CPU inference with a small instruct model, and a RAG application. Every
+  resource it renders is namespaced and non-RBAC, which is the whole contract a BYO chart has to
+  meet — the CRD-bearing platform around it lives in this repository's addons/ directory instead.
+type: application
+
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - alethia
+  - starter
+  - rag
+  - bring-your-own-chart
+home: https://github.com/alethialabs-io/alethia-starter-ai
+sources:
+  - https://github.com/alethialabs-io/alethia-starter-ai
+annotations:
+  alethia.io/trust-level: byo

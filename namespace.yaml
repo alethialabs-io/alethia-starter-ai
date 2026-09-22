@@ -1,0 +1,10 @@
+# The namespace for anything cluster-wide you add to the apps half of this template later.
+#
+# It is here because the repository ROOT needs at least one manifest — see kustomization.yaml —
+# and a Namespace you will want anyway is a better marker than a marker.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-platform
+  labels:
+    app.kubernetes.io/part-of: alethia-starter-ai

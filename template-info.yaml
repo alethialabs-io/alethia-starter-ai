@@ -1,0 +1,21 @@
+# What this repository is, readable from inside the cluster.
+#
+# Worth more than it looks: six months from now, someone finds an `ai-platform` namespace and a
+# `kserve` namespace on a cluster and has to work out where they came from. This says so.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: starter-ai-template
+  namespace: ai-platform
+  labels:
+    app.kubernetes.io/part-of: alethia-starter-ai
+data:
+  template: alethia-starter-ai
+  # Keep in step with TEMPLATE_VERSION at the repository root. CI fails if the two disagree.
+  version: "1.0.0"
+  source: https://github.com/alethialabs-io/alethia-starter-ai
+  layout: |
+    addons/   KServe + Kueue — CRD-bearing, cluster-scoped, wide-open `addons` project
+    chart/    Qdrant + embeddings + CPU inference + the RAG app — namespaced, default-deny project
+    gpu/      the NVIDIA GPU operator, inert until copied into addons/
+    batch/    Kueue queues, applied after Kueue exists

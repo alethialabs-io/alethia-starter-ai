@@ -1,0 +1,144 @@
+{{- if .Values.webui.enabled }}
+{{- $name := include "ai.component" (dict "root" . "component" "webui") }}
+{{/*
+The RAG application: Open WebUI, wired to the three services above.
+
+This is the piece that makes the stack a stack rather than four pods. Every URL below is rendered
+from the same helper the README quotes, so the chart and the documentation cannot drift.
+*/}}
+{{- if .Values.webui.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webui
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.webui.persistence.size }}
+  {{- with .Values.webui.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webui
+spec:
+  type: {{ .Values.webui.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.webui.service.port }}
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: webui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webui
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: webui
+  template:
+    metadata:
+      labels:
+        {{- include "ai.labels" . | nindent 8 }}
+        app.kubernetes.io/component: webui
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with (include "ai.serviceAccountName" .) }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      automountServiceAccountToken: false
+      containers:
+        - name: webui
+          image: "{{ .Values.webui.image.repository }}:{{ .Values.webui.image.tag }}"
+          imagePullPolicy: {{ .Values.webui.image.pullPolicy }}
+          env:
+            # Ollama is the default backend and is not part of this stack. Left on, the app spends
+            # every page load waiting for a host that is not there.
+            - name: ENABLE_OLLAMA_API
+              value: "false"
+            # Generation: llama.cpp's OpenAI-compatible endpoint.
+            - name: OPENAI_API_BASE_URL
+              value: {{ printf "%s/v1" (include "ai.llmUrl" .) | quote }}
+            # The key is required by the client and ignored by the server. It is a placeholder,
+            # not a secret, and there is no credential anywhere in this chart.
+            - name: OPENAI_API_KEY
+              value: "sk-no-key-required"
+            # Retrieval: Qdrant instead of the bundled Chroma, because the bundled one lives in
+            # the app's own volume and does not survive being scaled or moved.
+            - name: VECTOR_DB
+              value: "qdrant"
+            - name: QDRANT_URI
+              value: {{ include "ai.qdrantUrl" . | quote }}
+            # Embeddings: TEI, through its OpenAI-compatible route. Without these three the app
+            # falls back to computing embeddings in-process with sentence-transformers — which
+            # works, and quietly makes the embedding server you are paying for do nothing.
+            - name: RAG_EMBEDDING_ENGINE
+              value: "openai"
+            - name: RAG_OPENAI_API_BASE_URL
+              value: {{ printf "%s/v1" (include "ai.embeddingsUrl" .) | quote }}
+            - name: RAG_OPENAI_API_KEY
+              value: "sk-no-key-required"
+            - name: RAG_EMBEDDING_MODEL
+              value: {{ .Values.embeddings.modelId | quote }}
+            - name: WEBUI_AUTH
+              value: {{ .Values.webui.auth | quote }}
+            - name: PORT
+              value: {{ .Values.webui.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.webui.port }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.webui.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: data
+              mountPath: /app/backend/data
+      volumes:
+        - name: data
+          {{- if .Values.webui.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $name }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- include "ai.scheduling" . | nindent 6 }}
+{{- end }}

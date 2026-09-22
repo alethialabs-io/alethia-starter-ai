@@ -1,0 +1,37 @@
+# Kueue — job queueing and batch admission.
+#
+# Also CRD-bearing (ClusterQueue, LocalQueue, ResourceFlavor, Workload), also cluster-scoped, also
+# therefore on this side of the line rather than in `chart/`.
+#
+# What Kueue buys an AI stack is the thing that goes wrong without it: a fine-tuning or batch
+# embedding Job that is admitted the moment it is submitted will sit `Pending` forever on a cluster
+# with no room, holding a quota you cannot see. Kueue admits a Job only when the whole of it fits.
+#
+# The queues themselves are NOT here — see `batch/`. They are custom resources of the CRDs this
+# chart installs, so they cannot be applied until it has synced at least once.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kueue
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: addons
+  source:
+    repoURL: oci://registry.k8s.io/kueue/charts
+    chart: kueue
+    targetRevision: "0.19.5"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kueue-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  revisionHistoryLimit: 3

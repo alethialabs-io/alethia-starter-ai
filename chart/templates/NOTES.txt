@@ -1,0 +1,30 @@
+{{ .Chart.Name }} {{ .Chart.Version }} is installed as {{ .Release.Name }} in {{ .Release.Namespace }}.
+
+CPU-only. Nothing in this release requests a GPU.
+
+The first start downloads two models, so give it a few minutes:
+
+  kubectl -n {{ .Release.Namespace }} get pods -w
+
+{{ if .Values.webui.enabled -}}
+Then reach the RAG app:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ai.component" (dict "root" . "component" "webui") }} 8080:{{ .Values.webui.service.port }}
+  open http://localhost:8080
+
+{{ if .Values.webui.auth -}}
+The first account you create becomes the administrator.
+{{ else -}}
+WARNING: webui.auth is false. Anyone who can reach the Service can read every document uploaded to it.
+{{ end -}}
+{{ end }}
+Wired up:
+{{ if .Values.llm.enabled }}  generation   {{ include "ai.llmUrl" . }}/v1  ({{ .Values.llm.hfRepo }}){{ end }}
+{{ if .Values.embeddings.enabled }}  embeddings   {{ include "ai.embeddingsUrl" . }}/v1  ({{ .Values.embeddings.modelId }}){{ end }}
+{{ if .Values.qdrant.enabled }}  vector db    {{ include "ai.qdrantUrl" . }}{{ end }}
+
+The CRD-bearing half of this template — KServe and Kueue — is NOT in this chart and cannot be.
+See addons/README.md in the template repository.
+{{ if eq .Values.webui.service.type "LoadBalancer" }}
+NOTE: webui.service.type is LoadBalancer, which provisions — and bills for — a cloud load balancer.
+{{ end -}}

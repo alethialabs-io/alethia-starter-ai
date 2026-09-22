@@ -1,0 +1,43 @@
+# KServe's controller — model serving.
+#
+# PREREQUISITE: cert-manager. KServe's admission webhook needs a certificate, and without one the
+# controller comes up and every InferenceService you create is rejected by the API server. Enable
+# the cert-manager add-on from Alethia's marketplace before this syncs; it is not shipped here,
+# because two things installing cert-manager into one cluster is a resource-ownership fight that
+# ArgoCD resolves by flapping.
+#
+# `deploymentMode: RawDeployment` is the important override. KServe defaults to `Serverless`,
+# which requires Knative Serving and an Istio ingress gateway — three more platforms, none of them
+# in this template, and an InferenceService that never leaves `Unknown` if they are absent.
+# RawDeployment renders a plain Deployment, Service and HPA instead.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kserve
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: addons
+  source:
+    repoURL: oci://ghcr.io/kserve/charts
+    chart: kserve
+    targetRevision: "v0.15.2"
+    helm:
+      values: |
+        kserve:
+          controller:
+            deploymentMode: "RawDeployment"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kserve
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  revisionHistoryLimit: 3

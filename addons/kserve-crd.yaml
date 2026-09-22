@@ -1,0 +1,37 @@
+# KServe's CustomResourceDefinitions — the CRD-bearing half, and the reason this file is HERE and
+# not in `chart/`.
+#
+# A CRD is cluster-scoped. Alethia's bring-your-own-chart project has `clusterResourceWhitelist: []`
+# and would refuse it; the `addons` project is wide open and accepts a source repository other than
+# your own, which is what lets this Application pull a chart from ghcr.io at all.
+#
+# Sync wave -1: the CRDs land before the controller that watches them. Without the ordering the
+# controller Application's first sync can dry-run against a type the API server has never heard of.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kserve-crd
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: addons
+  source:
+    repoURL: oci://ghcr.io/kserve/charts
+    chart: kserve-crd
+    targetRevision: "v0.15.2"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kserve
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # A CRD's schema is large enough to blow the 262144-byte last-applied-configuration
+      # annotation that a client-side apply writes. Server-side apply has no such limit.
+      - ServerSideApply=true
+  revisionHistoryLimit: 3

@@ -1,0 +1,60 @@
+# A Job that Kueue admits — the smallest thing that shows the mechanism working.
+#
+# Apply it BY HAND (`kubectl apply -f batch/sample-job.yaml`) rather than committing it into
+# `addons/`: a Job is a one-shot object, and a GitOps Application that prunes and self-heals will
+# recreate it every time it completes.
+#
+# The two lines that matter:
+#
+#   suspend: true                  — Kueue's webhook sets this on every Job it manages, and it is
+#                                    declared here so the Job cannot start before admission even
+#                                    if the webhook is slow.
+#   kueue.x-k8s.io/queue-name      — the LocalQueue this Job asks for. A Job with NO such label is
+#                                    not managed by Kueue at all and starts immediately, which is
+#                                    the quiet way to believe queueing is on when it is not.
+#
+# Watch it: `kubectl get workloads` shows the Workload object Kueue creates, and
+# `kubectl describe clusterqueue starter-cluster-queue` shows the quota it is consuming.
+#
+# Raise `parallelism` past the ClusterQueue's quota and the excess stays `suspend: true` until
+# room frees up, instead of sitting Pending against a scheduler that cannot see the budget.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: starter-batch-
+  # Must match the LocalQueue's namespace in queues.yaml.
+  namespace: default
+  labels:
+    kueue.x-k8s.io/queue-name: starter-queue
+spec:
+  parallelism: 2
+  completions: 2
+  suspend: true
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65535
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: work
+          image: registry.k8s.io/e2e-test-images/busybox:1.37.0-1
+          command: ["sh", "-c", "echo admitted at $(date -u +%FT%TZ); sleep 30"]
+          resources:
+            # These are what Kueue counts against the ClusterQueue's quota. A Job whose request
+            # exceeds the whole quota is never admitted — BestEffortFIFO is what stops it blocking
+            # everything behind it.
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
