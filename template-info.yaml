@@ -12,7 +12,7 @@ metadata:
 data:
   template: alethia-starter-ai
   # Keep in step with TEMPLATE_VERSION at the repository root. CI fails if the two disagree.
-  version: "1.0.0"
+  version: "1.0.1"
   source: https://github.com/alethialabs-io/alethia-starter-ai
   layout: |
     addons/   KServe + Kueue — CRD-bearing, cluster-scoped, wide-open `addons` project

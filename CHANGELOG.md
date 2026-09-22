@@ -14,6 +14,16 @@ What counts as which, for this repository:
 | A new component, a new value with a default, a pinned image or chart version | **minor** |
 | A comment, a README, a CI tweak | **patch** |
 
+## 1.0.1 — 2026-09-22
+
+- `chart/templates/serviceaccount.yaml`, rendered only when `serviceAccount.create` is true.
+
+  It was missing, and the CI step that asserts the contract check **fails** on a contract-breaking
+  render is what found it: with no such template the chart rendered the same thing whether the
+  value was true or false, so the "mutation" mutated nothing and the check passed a render it
+  should have refused. The control did its job on its first run. The chart now renders the
+  ServiceAccount rather than silently dropping it, with the refusal explained in the template.
+
 ## 1.0.0 — 2026-09-22
 
 Initial template.

@@ -7,7 +7,7 @@ description: >-
   meet — the CRD-bearing platform around it lives in this repository's addons/ directory instead.
 type: application
 
-version: 1.0.0
+version: 1.0.1
 appVersion: "1.0.0"
 
 keywords:
