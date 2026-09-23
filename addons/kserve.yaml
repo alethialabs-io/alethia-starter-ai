@@ -1,10 +1,13 @@
 # KServe's controller — model serving.
 #
 # PREREQUISITE: cert-manager. KServe's admission webhook needs a certificate, and without one the
-# controller comes up and every InferenceService you create is rejected by the API server. Enable
-# the cert-manager add-on from Alethia's marketplace before this syncs; it is not shipped here,
-# because two things installing cert-manager into one cluster is a resource-ownership fight that
-# ArgoCD resolves by flapping.
+# controller comes up and every InferenceService you create is rejected by the API server. There is
+# no cert-manager add-on in Alethia's marketplace — cert-manager is part of the platform. A project
+# created from the AI Workloads template gets it automatically, on any cloud, with no domain; any
+# other project gets it by turning on a managed certificate (a Domain name plus Managed TLS
+# certificate on the DNS component — AWS, Google Cloud and Azure). Do not add it here: two things
+# installing cert-manager into one cluster fight over the same CRDs, and ArgoCD resolves that by
+# flapping.
 #
 # `deploymentMode: RawDeployment` is the important override. KServe defaults to `Serverless`,
 # which requires Knative Serving and an Istio ingress gateway — three more platforms, none of them

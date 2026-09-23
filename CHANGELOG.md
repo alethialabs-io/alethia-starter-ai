@@ -14,6 +14,15 @@ What counts as which, for this repository:
 | A new component, a new value with a default, a pinned image or chart version | **minor** |
 | A comment, a README, a CI tweak | **patch** |
 
+## 1.0.2 — 2026-09-23
+
+- The cert-manager prerequisite in `README.md`, `addons/README.md` and `addons/kserve.yaml` named a
+  marketplace cert-manager add-on that does not exist. cert-manager is part of Alethia's platform:
+  a project created from the **AI Workloads** template gets it with no domain on any cloud, and any
+  other project gets it by turning on a managed certificate (AWS, Google Cloud, Azure). The
+  instruction not to add cert-manager to `addons/` stays, now with its reason: two copies fight
+  over the same CRDs.
+
 ## 1.0.1 — 2026-09-22
 
 - `chart/templates/serviceaccount.yaml`, rendered only when `serviceAccount.create` is true.

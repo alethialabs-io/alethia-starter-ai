@@ -17,9 +17,15 @@ to teach.
 
 ## Before these converge
 
-**Enable the cert-manager add-on from Alethia's marketplace.** KServe's admission webhook needs a
-certificate. cert-manager is not shipped here on purpose: two things installing cert-manager into
-one cluster is a resource-ownership fight, and ArgoCD resolves it by flapping.
+**cert-manager must be running.** KServe's admission webhook needs a certificate from it. There is
+no cert-manager add-on in Alethia's marketplace — it is part of the platform. Create the project
+from the **AI Workloads** template and Alethia installs it for you, on any cloud, with no domain. If
+you copied this repository into a project created some other way, turn on a managed certificate
+instead: a **Domain name** plus **Managed TLS certificate** on the DNS component (AWS, Google Cloud
+and Azure).
+
+Do not add cert-manager to this directory. It is not shipped here on purpose: two things installing
+cert-manager into one cluster fight over the same CRDs, and ArgoCD resolves that by flapping.
 
 ## What is deliberately NOT here
 
