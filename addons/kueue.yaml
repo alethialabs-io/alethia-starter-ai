@@ -21,8 +21,11 @@ metadata:
 spec:
   project: addons
   source:
-    repoURL: oci://registry.k8s.io/kueue/charts
-    chart: kueue
+    # An `oci://` repoURL is an OCI ARTIFACT to ArgoCD 3.x, not a Helm repository, so it must name
+    # the chart itself and `path: .` — a separate `chart:` field is ignored and the registry answers
+    # for `registry.k8s.io/kueue/charts` as if it were the chart (403 or not found).
+    repoURL: oci://registry.k8s.io/kueue/charts/kueue
+    path: .
     targetRevision: "0.19.5"
   destination:
     server: https://kubernetes.default.svc

@@ -17,8 +17,8 @@ to teach.
 
 ## Before these converge
 
-**Enable the cert-manager add-on from Alethia's marketplace.** KServe's admission webhook needs a
-certificate. cert-manager is not shipped here on purpose: two things installing cert-manager into
+**KServe needs cert-manager, and Alethia installs it** for an AI Workloads project (for any other
+project, turn on a managed certificate). KServe's admission webhook needs a certificate. cert-manager is not shipped here on purpose: two things installing cert-manager into
 one cluster is a resource-ownership fight, and ArgoCD resolves it by flapping.
 
 ## What is deliberately NOT here
