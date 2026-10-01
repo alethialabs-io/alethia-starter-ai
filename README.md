@@ -9,7 +9,9 @@ levels Alethia gives you.**
 > A GPU node pool is the most expensive thing you could provision by accident, so enabling one is a
 > deliberate `cp` and a commit with your name on it. See [`gpu/`](./gpu).
 
-## The split
+## What it is
+
+### The split
 
 Alethia gives your manifests one of two ArgoCD projects, and they are not the same shape:
 
@@ -40,42 +42,7 @@ batch/                Kueue queues + a sample → applied after Kueue exists
 hack/                 the contract check, runnable against any chart
 ```
 
-## Use it
-
-**KServe needs cert-manager, and Alethia installs it.** If you created the project from the **AI
-Workloads** template, you need to do nothing. Otherwise, turn on a managed certificate on the DNS component.
-There is no cert-manager add-on in the marketplace. Do not add one to `addons/`: a second copy fights the platform's copy over the same
-CustomResourceDefinitions, and ArgoCD resolves that by flapping.
-
-1. **Use this template** to create your own repository.
-
-2. **The trusted half.** Point the environment's **ArgoCD apps repository** at your copy and leave
-   the overlay path empty. Deploy. The root Application applies the namespace; the `addons`
-   Application creates `kserve-crd`, `kserve` and `kueue`.
-
-   ```bash
-   alethia project component add --project <project> --env <env> --kind repositories \
-     --set apps_destination_repo=https://github.com/<you>/<your-repo>
-   ```
-
-3. **The untrusted half.** **Add-ons → Bring your own chart**:
-   - **Chart repository** — `https://github.com/<you>/<your-repo>`
-   - **Chart path** — `chart`
-   - **Ref** — `HEAD`, or a tag if you want deploys to be explicit
-
-4. Wait. The first start downloads two models — roughly 950 MB in total — so give it a few
-   minutes. The probes are sized for it; a pod that looks stuck for the first five minutes is
-   downloading.
-
-   ```bash
-   kubectl -n <your-namespace> get pods -w
-   kubectl -n <your-namespace> port-forward svc/<release>-alethia-starter-ai-webui 8080:80
-   ```
-
-   The first account you create in the web UI is the administrator. Upload a document, ask a
-   question about it, and the answer has been through all four components.
-
-## What is in `chart/`
+### What is in `chart/`
 
 | Component | Image | Why this one |
 |---|---|---|
@@ -92,7 +59,7 @@ mind losing.
 **Every image tag is pinned.** `:server` and `:main` exist upstream and move; a template whose
 behaviour changes when someone else pushes is not a template.
 
-## What is in `addons/`
+### What is in `addons/`
 
 | File | Chart | Into |
 |---|---|---|
@@ -109,7 +76,7 @@ Each of these names `project: addons`, not `project: apps`. The `apps` project p
 `ghcr.io`. The `addons` project is the one that accepts another source, which is exactly why this
 directory is where an upstream chart goes.
 
-## Cost, stated before you spend it
+### Cost, stated before you spend it
 
 | | Roughly |
 |---|---|
@@ -119,7 +86,54 @@ directory is where an upstream chart goes.
 Nothing in this template provisions the second one. [`gpu/`](./gpu) explains what it takes to, and
 what to delete afterwards — including the node pool, which no manifest here can remove for you.
 
-## Verification
+## Use this template
+
+**Use this template** to create your own repository.
+
+## Connect it in Alethia
+
+**KServe needs cert-manager, and Alethia installs it.** If you created the project from the **AI
+Workloads** template, you need to do nothing. Otherwise, turn on a managed certificate on the DNS component.
+There is no cert-manager add-on in the marketplace. Do not add one to `addons/`: a second copy fights the platform's copy over the same
+CustomResourceDefinitions, and ArgoCD resolves that by flapping.
+
+1. **The trusted half.** Point the environment's **ArgoCD apps repository** at your copy and leave
+   the overlay path empty. Deploy. The root Application applies the namespace; the `addons`
+   Application creates `kserve-crd`, `kserve` and `kueue`.
+
+   ```bash
+   alethia project component add --project <project> --env <env> --kind repositories \
+     --set apps_destination_repo=https://github.com/<you>/<your-repo>
+   ```
+
+2. **The untrusted half.** **Add-ons → Bring your own chart**:
+   - **Chart repository** — `https://github.com/<you>/<your-repo>`
+   - **Chart path** — `chart`
+   - **Ref** — `HEAD`, or a tag if you want deploys to be explicit
+
+3. Wait. The first start downloads two models — roughly 950 MB in total — so give it a few
+   minutes. The probes are sized for it; a pod that looks stuck for the first five minutes is
+   downloading.
+
+   ```bash
+   kubectl -n <your-namespace> get pods -w
+   kubectl -n <your-namespace> port-forward svc/<release>-alethia-starter-ai-webui 8080:80
+   ```
+
+   The first account you create in the web UI is the administrator. Upload a document, ask a
+   question about it, and the answer has been through all four components.
+
+The docs page that covers this template, and the other two:
+[Starter Templates](https://alethialabs.io/docs/console/design-project/starter-templates).
+
+## The contract
+
+Contracts in full:
+[the apps repository](https://alethialabs.io/docs/console/design-project/repositories) ·
+[bring your own charts](https://alethialabs.io/docs/concepts/bring-your-own-charts). The split
+above is how this template meets both.
+
+### Verification
 
 `.github/workflows/validate.yml`, on every push, free:
 
@@ -136,6 +150,17 @@ what to delete afterwards — including the node pool, which no manifest here ca
   manifests and the rendered chart, not by grepping the source, so it cannot be satisfied by
   deleting the comment that promises it.
 
+## Versioning
+
+`TEMPLATE_VERSION`, `chart/Chart.yaml`'s `version` and the `version` key in `template-info.yaml`
+all hold the same [semantic version](https://semver.org), and CI fails if any of them disagrees or
+if the template changes without one moving. [`CHANGELOG.md`](./CHANGELOG.md) records each release
+and says which change is which bump.
+
+## Licence
+
+Apache-2.0. See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).
+
 ## The other starter templates
 
 | Repository | What it is |
@@ -144,7 +169,3 @@ what to delete afterwards — including the node pool, which no manifest here ca
 | [`alethia-starter-chart`](https://github.com/alethialabs-io/alethia-starter-chart) | a minimal bring-your-own Helm chart |
 | [`alethia-starter-ai`](https://github.com/alethialabs-io/alethia-starter-ai) | this one |
 | [`alethia-examples`](https://github.com/alethialabs-io/alethia-examples) | larger worked references, including the isolation ladder |
-
-Contracts in full:
-[the apps repository](https://alethialabs.io/docs/console/design-project/repositories) ·
-[bring your own charts](https://alethialabs.io/docs/concepts/bring-your-own-charts).
