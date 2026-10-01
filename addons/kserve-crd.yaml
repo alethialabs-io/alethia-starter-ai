@@ -19,8 +19,11 @@ metadata:
 spec:
   project: addons
   source:
-    repoURL: oci://ghcr.io/kserve/charts
-    chart: kserve-crd
+    # An `oci://` repoURL is an OCI ARTIFACT to ArgoCD 3.x, not a Helm repository, so it must name
+    # the chart itself and `path: .` — a separate `chart:` field is ignored and the registry answers
+    # for `ghcr.io/kserve/charts` as if it were the chart (403 or not found).
+    repoURL: oci://ghcr.io/kserve/charts/kserve-crd
+    path: .
     targetRevision: "v0.15.2"
   destination:
     server: https://kubernetes.default.svc

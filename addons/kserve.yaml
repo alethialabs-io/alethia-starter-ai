@@ -1,10 +1,10 @@
 # KServe's controller — model serving.
 #
 # PREREQUISITE: cert-manager. KServe's admission webhook needs a certificate, and without one the
-# controller comes up and every InferenceService you create is rejected by the API server. Enable
-# the cert-manager add-on from Alethia's marketplace before this syncs; it is not shipped here,
-# because two things installing cert-manager into one cluster is a resource-ownership fight that
-# ArgoCD resolves by flapping.
+# controller comes up and every InferenceService you create is rejected by the API server. Alethia
+# installs cert-manager for an AI Workloads project (elsewhere: turn on a managed certificate). It is
+# not shipped here, because two things installing cert-manager into one cluster is a
+# resource-ownership fight that ArgoCD resolves by flapping.
 #
 # `deploymentMode: RawDeployment` is the important override. KServe defaults to `Serverless`,
 # which requires Knative Serving and an Istio ingress gateway — three more platforms, none of them
@@ -22,8 +22,11 @@ metadata:
 spec:
   project: addons
   source:
-    repoURL: oci://ghcr.io/kserve/charts
-    chart: kserve
+    # An `oci://` repoURL is an OCI ARTIFACT to ArgoCD 3.x, not a Helm repository, so it must name
+    # the chart itself and `path: .` — a separate `chart:` field is ignored and the registry answers
+    # for `ghcr.io/kserve/charts` as if it were the chart (403 or not found).
+    repoURL: oci://ghcr.io/kserve/charts/kserve
+    path: .
     targetRevision: "v0.15.2"
     helm:
       values: |

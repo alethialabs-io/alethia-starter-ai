@@ -14,6 +14,15 @@ What counts as which, for this repository:
 | A new component, a new value with a default, a pinned image or chart version | **minor** |
 | A comment, a README, a CI tweak | **patch** |
 
+## 1.0.2 — 2026-09-30
+
+- `addons/kserve-crd.yaml`, `addons/kserve.yaml`, `addons/kueue.yaml`: the chart is named in the OCI
+  `repoURL` with `path: .`. ArgoCD 3.x reads an `oci://` source as an OCI artifact and ignored the
+  separate `chart:` field. KServe answered 403 and Kueue answered not found, so none of the three
+  ever synced (measured by the Alethia e2e templates run, 2026-09-30).
+- The cert-manager prerequisite now says what the platform does. Alethia installs cert-manager for
+  an AI Workloads project, and the marketplace has no cert-manager add-on to enable.
+
 ## 1.0.1 — 2026-09-22
 
 - `chart/templates/serviceaccount.yaml`, rendered only when `serviceAccount.create` is true.

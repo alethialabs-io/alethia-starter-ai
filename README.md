@@ -42,9 +42,10 @@ hack/                 the contract check, runnable against any chart
 
 ## Use it
 
-**Prerequisite: enable the cert-manager add-on** from Alethia's marketplace. KServe's admission
-webhook needs a certificate. cert-manager is not shipped here because two things installing
-cert-manager into one cluster is a resource-ownership fight that ArgoCD resolves by flapping.
+**KServe needs cert-manager, and Alethia installs it.** If you created the project from the **AI
+Workloads** template, you need to do nothing. Otherwise, turn on a managed certificate on the DNS component.
+There is no cert-manager add-on in the marketplace. Do not add one to `addons/`: a second copy fights the platform's copy over the same
+CustomResourceDefinitions, and ArgoCD resolves that by flapping.
 
 1. **Use this template** to create your own repository.
 
